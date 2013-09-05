@@ -16,14 +16,27 @@
 
 package io.soliton.protobuf;
 
+import com.google.common.base.Charsets;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpRequestDecoder;
+import io.netty.handler.codec.http.multipart.Attribute;
+import io.netty.handler.codec.http.multipart.DefaultHttpDataFactory;
+import io.netty.handler.codec.http.multipart.FileUpload;
+import io.netty.handler.codec.http.multipart.HttpDataFactory;
+import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder;
+import io.netty.handler.codec.http.multipart.InterfaceHttpData;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 
@@ -109,13 +122,27 @@ public class HttpJsonRpcServer implements Server {
 
   private final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
+    private final HttpDataFactory HTTP_DATA_FACTORY = new DefaultHttpDataFactory(
+        DefaultHttpDataFactory.MINSIZE);
+
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, HttpRequest request) throws Exception {
       if (!request.getMethod().equals(HttpMethod.POST)) {
         // return error
       }
+      HttpPostRequestDecoder decoder = new HttpPostRequestDecoder(HTTP_DATA_FACTORY, request);
 
-      
+      for (InterfaceHttpData data : decoder.getBodyHttpDatas()) {
+        if (InterfaceHttpData.HttpDataType.Attribute == data.getHttpDataType()) {
+          Attribute attribute = (Attribute) data;
+          System.out.println(attribute.getValue());
+        } else if (InterfaceHttpData.HttpDataType.FileUpload == data.getHttpDataType()) {
+          FileUpload file = (FileUpload) data;
+          System.out.println(file.getString(Charsets.UTF_8));
+        }
+      }
+      decoder.destroy();
+
     }
   }
 }
