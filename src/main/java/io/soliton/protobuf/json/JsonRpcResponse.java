@@ -18,19 +18,35 @@ package io.soliton.protobuf.json;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
 public class JsonRpcResponse {
 
-  public static JsonObject error(HttpResponseStatus status) {
+  private final JsonObject body;
+
+  static JsonRpcResponse error(HttpResponseStatus status) {
     return null;
   }
 
-  public static JsonObject error(HttpResponseStatus status, String message) {
+  static JsonRpcResponse error(HttpResponseStatus status, String message) {
+    JsonObject error = new JsonObject();
+    error.add("code", new JsonPrimitive(status.code()));
+    error.add("message", new JsonPrimitive(message));
+    JsonObject body = new JsonObject();
+    body.add("error", error);
+    return new JsonRpcResponse(body);
+  }
+
+  public static JsonRpcResponse success(JsonObject payload, JsonElement id) {
     return null;
   }
 
-  public static JsonObject success(JsonObject payload, JsonElement id) {
-    return null;
+  private JsonRpcResponse(JsonObject body) {
+    this.body = body;
+  }
+
+  public JsonObject body() {
+    return body;
   }
 }

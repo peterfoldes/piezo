@@ -16,41 +16,105 @@
 
 package io.soliton.protobuf.json;
 
+import com.google.common.base.Splitter;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
+import io.netty.handler.codec.http.HttpResponseStatus;
+
+import java.util.Iterator;
 
 public class JsonRpcRequest {
+
+  private static final Splitter DOT = Splitter.on('.').trimResults().omitEmptyStrings();
 
   private final String service;
   private final String method;
   private final JsonElement id;
-  private final JsonObject payload;
+  private final JsonObject parameter;
 
-  public static JsonRpcRequest of(JsonElement element) {
-    return null;
+  public static JsonRpcRequest of(JsonElement root) throws JsonRpcError {
+    if (!root.isJsonObject()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Received payload is not a JSON Object");
+    }
+    JsonObject request = root.getAsJsonObject();
+    JsonElement id = request.get("id");
+    if (id == null) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Received request is missing 'id' property");
+    }
+
+    JsonElement methodNameElement = request.get("method");
+    if (!methodNameElement.isJsonPrimitive()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Method name is not a JSON primitive");
+    }
+
+    JsonPrimitive methodName = methodNameElement.getAsJsonPrimitive();
+    if (!methodName.isString()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Method name is not a string");
+    }
+
+    JsonElement paramsElement = request.get("params");
+    if (!paramsElement.isJsonArray()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "'params' property is not an array");
+    }
+
+    JsonArray params = paramsElement.getAsJsonArray();
+    if (params.size() != 1) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "'params' property is not an array");
+    }
+
+    JsonElement paramElement = params.get(0);
+    if (!paramElement.isJsonObject()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Parameter is not an object");
+    }
+
+    JsonObject parameter = paramElement.getAsJsonObject();
+    Iterator<String> serviceAndMethod = DOT.split(methodName.getAsString()).iterator();
+
+    if (!serviceAndMethod.hasNext()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "'method' property is not properly formatted");
+    }
+
+    String service = serviceAndMethod.next();
+    if (!serviceAndMethod.hasNext()) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "'method' property is not properly formatted");
+    }
+
+    String method = serviceAndMethod.next();
+    return new JsonRpcRequest(service, method, id, parameter);
   }
 
   private JsonRpcRequest(String service, String method, JsonElement id,
-      JsonObject payload) {
+      JsonObject parameter) {
     this.service = service;
     this.method = method;
     this.id = id;
-    this.payload = payload;
+    this.parameter = parameter;
   }
 
-  public String getService() {
+  public String service() {
     return service;
   }
 
-  public String getMethod() {
+  public String method() {
     return method;
   }
 
-  public JsonElement getId() {
+  public JsonElement id() {
     return id;
   }
 
-  public JsonObject getPayload() {
-    return payload;
+  public JsonObject parameter() {
+    return parameter;
   }
 }
