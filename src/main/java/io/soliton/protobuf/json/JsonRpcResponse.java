@@ -26,13 +26,18 @@ public class JsonRpcResponse {
   private final JsonObject body;
 
   static JsonRpcResponse error(HttpResponseStatus status) {
-    return null;
+    return error(status, null);
   }
 
   static JsonRpcResponse error(HttpResponseStatus status, String message) {
+    return error(status, message, null);
+  }
+
+  static JsonRpcResponse error(HttpResponseStatus status, String message, JsonElement id) {
     JsonObject error = new JsonObject();
     error.add("code", new JsonPrimitive(status.code()));
     error.add("message", new JsonPrimitive(message));
+    error.add("id", id);
     JsonObject body = new JsonObject();
     body.add("error", error);
     return new JsonRpcResponse(body);

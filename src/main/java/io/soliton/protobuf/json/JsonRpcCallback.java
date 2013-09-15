@@ -16,12 +16,26 @@
 
 package io.soliton.protobuf.json;
 
+import com.google.common.base.Charsets;
 import com.google.common.util.concurrent.FutureCallback;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.protobuf.Message;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.handler.codec.http.*;
 
+/**
+ * Implements the logic executed upon a server method returning a result or throwing an exception.
+ *
+ * @param <O>
+ */
 public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
+
+  private static final Gson GSON = new GsonBuilder().create();
 
   private final JsonElement id;
   private final Channel channel;
@@ -33,11 +47,25 @@ public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
 
   @Override
   public void onSuccess(O result) {
-    //To change body of implemented methods use File | Settings | File Templates.
+    JsonObject payload = ProtoJsonUtils.toJson(result);
+    JsonRpcResponse response = JsonRpcResponse.success(payload, id);
+    ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
+    FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+          HttpResponseStatus.OK, responseBuffer);
+    httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+    httpResponse.headers().set(HttpHeaders.Names.CONTENT_LENGTH, responseBuffer.readableBytes());
+    channel.writeAndFlush(httpResponse);
   }
 
   @Override
   public void onFailure(Throwable t) {
-    //To change body of implemented methods use File | Settings | File Templates.
+    JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.INTERNAL_SERVER_ERROR,
+        t.getMessage(), id);
+    ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
+    FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+        HttpResponseStatus.OK, responseBuffer);
+    httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+    httpResponse.headers().set(HttpHeaders.Names.CONTENT_LENGTH, responseBuffer.readableBytes());
+    channel.writeAndFlush(httpResponse);
   }
 }

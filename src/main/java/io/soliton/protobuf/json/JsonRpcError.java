@@ -16,6 +16,7 @@
 
 package io.soliton.protobuf.json;
 
+import com.google.gson.JsonElement;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
 public class JsonRpcError extends Exception {
@@ -32,6 +33,10 @@ public class JsonRpcError extends Exception {
 
   public static JsonRpcError error(HttpResponseStatus status, String message) {
     return new JsonRpcError(JsonRpcResponse.error(status, message));
+  }
+
+  public static JsonRpcError error(HttpResponseStatus status, String message, JsonElement id) {
+    return new JsonRpcError(JsonRpcResponse.error(status, message, id));
   }
 
   private JsonRpcError(JsonRpcResponse response) {
