@@ -35,7 +35,7 @@ import io.netty.handler.codec.http.*;
  */
 public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
 
-  private static final Gson GSON = new GsonBuilder().create();
+  private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
   private final JsonElement id;
   private final Channel channel;
@@ -47,7 +47,7 @@ public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
 
   @Override
   public void onSuccess(O result) {
-    JsonObject payload = ProtoJsonUtils.toJson(result);
+    JsonObject payload = Messages.toJson(result);
     JsonRpcResponse response = JsonRpcResponse.success(payload, id);
     ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
     FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,

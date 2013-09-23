@@ -51,7 +51,6 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
   @Override
   protected void channelRead0(ChannelHandlerContext ctx, HttpRequest request) throws Exception {
     HttpContent content = (HttpContent) request;
-    System.out.println(content.content().toString(Charsets.UTF_8));
 
     if (!validateTransport(request, ctx.channel())) {
       return;
@@ -69,13 +68,6 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
     ServerMethod<? extends Message, ? extends Message> method = service.lookup(
         jsonRpcRequest.method());
     invoke(method, jsonRpcRequest.parameter(), jsonRpcRequest.id(), ctx.channel());
-
-//      ByteBuf responseBuffer = Unpooled.copiedBuffer("world\n", Charsets.UTF_8);
-//      FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-//          HttpResponseStatus.OK, responseBuffer);
-//      response.headers().set(HttpHeaders.Names.CONTENT_TYPE, "text/plain; charset=UTF-8");
-//      response.headers().set(HttpHeaders.Names.CONTENT_LENGTH, responseBuffer.readableBytes());
-//      ctx.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
   }
 
   private JsonRpcRequest marshallRequest(HttpContent content, Channel channel) {
@@ -86,9 +78,11 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
     } catch (JsonRpcError jsonRpcError) {
       JsonRpcResponse response = jsonRpcError.response();
       ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(response).getBytes(Charsets.UTF_8));
-      channel.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody)).addListener(ChannelFutureListener.CLOSE);
+          new Gson().toJson(response.body()).getBytes(Charsets.UTF_8));
+      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+          HttpResponseStatus.OK, responseBody);
+      httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+      channel.writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
       return null;
     }
     return jsonRpcRequest;
@@ -117,9 +111,11 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
     if (errorResponse != null) {
       ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(errorResponse).getBytes(Charsets.UTF_8));
-      channel.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody)).addListener(ChannelFutureListener.CLOSE);
+          new Gson().toJson(errorResponse.body()).getBytes(Charsets.UTF_8));
+      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
+          HttpResponseStatus.OK, responseBody);
+      httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+      channel.writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
     }
 
     return errorResponse == null;
@@ -127,7 +123,7 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
   private <I extends Message, O extends Message> void invoke(
       ServerMethod<I, O> method, JsonObject payload, JsonElement id, Channel channel) {
-    I request = (I) ProtoJsonUtils.fromJson(method.inputBuilder(), payload);
+    I request = (I) Messages.fromJson(method.inputBuilder(), payload);
     ListenableFuture<O> response = method.invoke(request);
     FutureCallback<O> callback = new JsonRpcCallback<>(id, channel);
     Futures.addCallback(response, callback);

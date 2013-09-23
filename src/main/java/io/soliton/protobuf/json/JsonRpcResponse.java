@@ -36,15 +36,18 @@ public class JsonRpcResponse {
   static JsonRpcResponse error(HttpResponseStatus status, String message, JsonElement id) {
     JsonObject error = new JsonObject();
     error.add("code", new JsonPrimitive(status.code()));
-    error.add("message", new JsonPrimitive(message));
-    error.add("id", id);
+    error.addProperty("message", message);
     JsonObject body = new JsonObject();
     body.add("error", error);
+    body.add("id", id);
     return new JsonRpcResponse(body);
   }
 
   public static JsonRpcResponse success(JsonObject payload, JsonElement id) {
-    return null;
+    JsonObject body = new JsonObject();
+    body.add("id", id);
+    body.add("result", payload);
+    return new JsonRpcResponse(body);
   }
 
   private JsonRpcResponse(JsonObject body) {

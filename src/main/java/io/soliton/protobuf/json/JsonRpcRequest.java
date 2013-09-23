@@ -39,14 +39,28 @@ public class JsonRpcRequest {
       throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
           "Received payload is not a JSON Object");
     }
+
     JsonObject request = root.getAsJsonObject();
     JsonElement id = request.get("id");
+    JsonElement methodNameElement = request.get("method");
+    JsonElement paramsElement = request.get("params");
+
     if (id == null) {
       throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
           "Received request is missing 'id' property");
     }
 
-    JsonElement methodNameElement = request.get("method");
+    if (methodNameElement == null) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Received request is missing 'method' propoerty");
+    }
+
+    if (paramsElement == null) {
+      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
+          "Received request is missing 'params' propoerty");
+    }
+
+
     if (!methodNameElement.isJsonPrimitive()) {
       throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
           "Method name is not a JSON primitive");
@@ -58,7 +72,6 @@ public class JsonRpcRequest {
           "Method name is not a string");
     }
 
-    JsonElement paramsElement = request.get("params");
     if (!paramsElement.isJsonArray()) {
       throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
           "'params' property is not an array");

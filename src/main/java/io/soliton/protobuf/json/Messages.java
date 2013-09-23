@@ -27,7 +27,7 @@ import com.google.protobuf.Message;
 import java.util.List;
 import java.util.Map;
 
-public class ProtoJsonUtils {
+public class Messages {
 
   public static JsonObject toJson(Message output) {
     JsonObject object = new JsonObject();
@@ -45,7 +45,7 @@ public class ProtoJsonUtils {
         object.add(jsonName, serializeField(field.getKey(), field.getValue()));
       }
     }
-    return null;
+    return object;
   }
 
   public static JsonElement serializeField(Descriptors.FieldDescriptor field, Object value) {
