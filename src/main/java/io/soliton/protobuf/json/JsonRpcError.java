@@ -23,14 +23,6 @@ public class JsonRpcError extends Exception {
 
   private final JsonRpcResponse response;
 
-  public static JsonRpcError serverError() {
-    return serverError("Server unavailable");
-  }
-
-  public static JsonRpcError serverError(String message) {
-    return error(HttpResponseStatus.INTERNAL_SERVER_ERROR, message);
-  }
-
   public static JsonRpcError error(HttpResponseStatus status, String message) {
     return new JsonRpcError(JsonRpcResponse.error(status, message));
   }

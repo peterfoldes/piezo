@@ -79,8 +79,7 @@ public class HttpJsonRpcServer implements Server {
           @Override
           protected void initChannel(Channel channel) throws Exception {
             ChannelPipeline pipeline = channel.pipeline();
-            pipeline.addLast("decoder", new HttpRequestDecoder());
-            pipeline.addLast("encode", new HttpResponseEncoder());
+            pipeline.addLast("http-codec", new HttpServerCodec());
             pipeline.addLast("aggregator", new HttpObjectAggregator(1048576));
             pipeline.addLast("json-rpc", new JsonRpcHandler(HttpJsonRpcServer.this, rpcPath));
           }

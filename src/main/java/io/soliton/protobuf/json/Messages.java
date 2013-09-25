@@ -48,7 +48,7 @@ public class Messages {
     return object;
   }
 
-  public static JsonElement serializeField(Descriptors.FieldDescriptor field, Object value) {
+  private static JsonElement serializeField(Descriptors.FieldDescriptor field, Object value) {
     switch (field.getType()) {
       case DOUBLE:
         return new JsonPrimitive((Double) value);
