@@ -28,8 +28,8 @@ import io.soliton.protobuf.*;
 import java.util.logging.Logger;
 
 /**
- * Concrete {@link io.soliton.protobuf.Server} implementation surfacing the registered services
- * over an HTTP transport using the JSON-RPC protocol.
+ * Concrete {@link io.soliton.protobuf.Server} implementation surfacing the
+ * registered services over an HTTP transport using the JSON-RPC protocol.
  *
  * @see <a href="http://json-rpc.org/">JSON-RPC</a>
  */
@@ -46,6 +46,12 @@ public class HttpJsonRpcServer implements Server {
   private EventLoopGroup parentGroup;
   private EventLoopGroup childGroup;
 
+  /**
+   * Exhaustive constructor.
+   *
+   * @param port the TCP port this server should bind to
+   * @param rpcPath the URL path on which the handler should be bound.
+   */
   public HttpJsonRpcServer(int port, String rpcPath) {
     this.port = port;
     this.rpcPath = rpcPath;

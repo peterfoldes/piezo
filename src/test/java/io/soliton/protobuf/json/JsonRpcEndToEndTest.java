@@ -116,27 +116,42 @@ public class JsonRpcEndToEndTest {
   }
 
   @Test
-  public void testRequestResponseSingleFile() throws InterruptedException {
+  public void testRequestResponseSingleFile() throws Exception {
+    JsonObject request = new JsonObject();
+    request.addProperty("method", "Dns.Resolve");
+    request.addProperty("id", "identifier");
+    JsonObject parameter = new JsonObject();
+    parameter.addProperty("domain", "Castro.local");
+    JsonArray parameters = new JsonArray();
+    parameters.add(parameter);
+    request.add("params", parameters);
 
-//    TestingSingleFile.Dns.Interface client = TestingSingleFile.Dns.newStub(
-//        new TcpClient(HostAndPort.fromParts("localhost", 10000)));
-//    TestingSingleFile.DnsRequest request = TestingSingleFile.DnsRequest.newBuilder()
-//        .setDomain("Castro.local").build();
-//
-//    final CountDownLatch latch = new CountDownLatch(1);
-//    Futures.addCallback(client.resolve(request), new FutureCallback<TestingSingleFile.DnsResponse>() {
-//      @Override
-//      public void onSuccess(TestingSingleFile.DnsResponse result) {
-//        Assert.assertEquals(1234567, result.getIpAddress());
-//        latch.countDown();
-//      }
-//
-//      @Override
-//      public void onFailure(Throwable throwable) {
-//        Throwables.propagate(throwable);
-//        latch.countDown();
-//      }
-//    }, Executors.newCachedThreadPool());
-//    latch.await();
+    HttpContent httpContent = new ByteArrayContent("application/json",
+        new Gson().toJson(request).getBytes(Charsets.UTF_8));
+
+    GenericUrl url = new GenericUrl();
+    url.setScheme("http");
+    url.setHost("localhost");
+    url.setPort(10000);
+    url.setRawPath("/rpc");
+
+    HttpRequestFactory requestFactory = new NetHttpTransport().createRequestFactory();
+    HttpRequest httpRequest = requestFactory.buildPostRequest(url, httpContent);
+
+    HttpResponse httpResponse = httpRequest.execute();
+    Assert.assertEquals(HttpStatusCodes.STATUS_CODE_OK, httpResponse.getStatusCode());
+    Reader reader = new InputStreamReader(httpResponse.getContent(), Charsets.UTF_8);
+    JsonElement response = new JsonParser().parse(reader);
+    Assert.assertTrue(response.isJsonObject());
+    JsonObject responseObject = response.getAsJsonObject();
+    Assert.assertNotNull(responseObject.get("id"));
+    Assert.assertNotNull(responseObject.get("result"));
+    JsonElement result = responseObject.get("result");
+    Assert.assertTrue(result.isJsonObject());
+    JsonObject resultObject = result.getAsJsonObject();
+    Assert.assertNotNull(resultObject.get("ipAddress"));
+    Assert.assertTrue(resultObject.get("ipAddress").isJsonPrimitive());
+    Assert.assertTrue(resultObject.get("ipAddress").getAsJsonPrimitive().isNumber());
+    Assert.assertEquals(1234567, resultObject.get("ipAddress").getAsInt());
   }
 }

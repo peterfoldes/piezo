@@ -29,9 +29,10 @@ import io.netty.channel.Channel;
 import io.netty.handler.codec.http.*;
 
 /**
- * Implements the logic executed upon a server method returning a result or throwing an exception.
+ * Implements the logic executed upon a server method returning a result or
+ * throwing an exception.
  *
- * @param <O>
+ * @param <O> the type of the response
  */
 public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
 
