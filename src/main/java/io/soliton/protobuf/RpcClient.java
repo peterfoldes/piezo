@@ -17,27 +17,17 @@
 package io.soliton.protobuf;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.MapMaker;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.Message;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
-import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.handler.codec.protobuf.ProtobufDecoder;
-import io.netty.handler.codec.protobuf.ProtobufEncoder;
 import io.netty.util.concurrent.GenericFutureListener;
 
-import java.util.Random;
-import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Logger;
 
 /**
@@ -46,48 +36,34 @@ import java.util.logging.Logger;
  *
  * @author Julien Silland (julien@soliton.io)
  */
-public class TcpClient extends SimpleChannelInboundHandler<Envelope> implements Client {
+public class RpcClient implements Client {
 
   private static final Logger logger = Logger.getLogger(
-      TcpClient.class.getCanonicalName());
-  private static final Random RANDOM = new Random();
-
-  private final ConcurrentMap<Long, ResponseFuture<? extends Message>> inFlightRequests =
-      new MapMaker().makeMap();
+      RpcClient.class.getCanonicalName());
 
   private final HostAndPort remoteAddress;
   private final Channel channel;
+  private final ClientRpcHandler handler = new ClientRpcHandler();
 
   /**
    * Creates a new, single transport connected to the given remote host.
    *
    * @param remoteAddress the coordinates of the remote host to connect to
    */
-  public TcpClient(HostAndPort remoteAddress) {
+  public RpcClient(HostAndPort remoteAddress) {
     this.remoteAddress = Preconditions.checkNotNull(remoteAddress);
     Bootstrap bootstrap = new Bootstrap();
     bootstrap.group(new NioEventLoopGroup());
     bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000);
     bootstrap.channel(NioSocketChannel.class);
-    bootstrap.handler(new ChannelInitializer<Channel>() {
-
-      @Override
-      protected void initChannel(Channel channel) throws Exception {
-        channel.pipeline().addLast("frameDecoder",
-            new LengthFieldBasedFrameDecoder(10 * 1024 * 1024, 0, 4, 0, 4));
-        channel.pipeline().addLast("protobufDecoder",
-            new ProtobufDecoder(Envelope.getDefaultInstance()));
-        channel.pipeline().addLast("frameEncoder", new LengthFieldPrepender(4));
-        channel.pipeline().addLast("protobufEncoder", new ProtobufEncoder());
-        channel.pipeline().addLast("piezoSimpleTransport", TcpClient.this);
-   }
-    });
+    bootstrap.handler(ChannelInitializers.protoBuf(Envelope.getDefaultInstance(), handler));
 
     ChannelFuture future = bootstrap.connect(remoteAddress.getHostText(), remoteAddress.getPort());
     future.awaitUninterruptibly();
     if (future.isSuccess()) {
       logger.info("Piezo client successfully connected to " + remoteAddress.toString());
       this.channel = future.channel();
+      handler.setChannel(this.channel);
     } else {
       logger.warning("Piezo client failed to connect to " + remoteAddress.toString());
       throw new RuntimeException(future.cause());
@@ -100,11 +76,9 @@ public class TcpClient extends SimpleChannelInboundHandler<Envelope> implements 
   @Override
   public <O extends Message> ListenableFuture<O> encodeMethodCall(
       ClientMethod<O> method, Message input) {
-    final long requestId = RANDOM.nextLong();
-    final ResponseFuture<O> output = new ResponseFuture<O>(
-        new Cancel(requestId), method.outputParser());
+    final ResponseFuture<O> output = handler.newProvisionalResponse(method.outputParser());
     Envelope request = Envelope.newBuilder()
-        .setRequestId(requestId)
+        .setRequestId(output.requestId())
         .setService(method.serviceName())
         .setMethod(method.name())
         .setPayload(input.toByteString())
@@ -112,9 +86,8 @@ public class TcpClient extends SimpleChannelInboundHandler<Envelope> implements 
     channel.writeAndFlush(request).addListener(new GenericFutureListener<ChannelFuture>() {
 
       public void operationComplete(ChannelFuture future) {
-        if (future.isSuccess()) {
-          inFlightRequests.put(requestId, output);
-        } else {
+        if (!future.isSuccess()) {
+          handler.finish(output.requestId());
           output.setException(future.cause());
         }
       }
@@ -122,43 +95,4 @@ public class TcpClient extends SimpleChannelInboundHandler<Envelope> implements 
     });
     return output;
   }
-
-  /**
-   * {@inheritDoc}
-   */
-  @Override
-  public void channelRead0(ChannelHandlerContext context, Envelope response) throws Exception {
-    ResponseFuture<? extends Message> future = inFlightRequests.remove(response.getRequestId());
-    if (future == null) {
-      logger.warning(String.format("Received response from %s for unknown request id: %d",
-          remoteAddress.toString(), response.getRequestId()));
-      return;
-    }
-    future.set(response);
-  }
-
-  /**
-   * Implements the cancellation logic for an individual RPC.
-   *
-   * @author Julien Silland (julien@soliton.io)
-   */
-  class Cancel implements Runnable {
-    private final long requestId;
-
-    public Cancel(long requestId) {
-      this.requestId = requestId;
-    }
-
-    @Override
-    public void run() {
-      if (inFlightRequests.remove(requestId) != null) {
-        Envelope request = Envelope.newBuilder()
-            .setRequestId(requestId)
-            .setControl(Control.newBuilder().setCancel(true))
-            .build();
-        channel.write(request);
-      }
-    }
-  }
-
 }

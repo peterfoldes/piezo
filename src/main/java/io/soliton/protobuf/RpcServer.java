@@ -14,43 +14,21 @@
  * limitations under the License.
  */
 
-package io.soliton.protobuf.json;
+package io.soliton.protobuf;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.soliton.protobuf.AbstracRpcServer;
-import io.soliton.protobuf.ChannelInitializers;
 
-/**
- * Concrete {@link io.soliton.protobuf.Server} implementation surfacing the
- * registered services over an HTTP transport using the JSON-RPC protocol.
- *
- * @see <a href="http://json-rpc.org/">JSON-RPC</a>
- */
-public class HttpJsonRpcServer extends AbstracRpcServer {
+public class RpcServer extends AbstracRpcServer {
 
-  private final String rpcPath;
-
-  /**
-   * Exhaustive constructor.
-   *
-   * @param port the TCP port this server should bind to
-   * @param rpcPath the URL path to which the JSON-RPC handler should be bound
-   */
-  public HttpJsonRpcServer(int port, String rpcPath) {
+  protected RpcServer(int port) {
     super(port, NioServerSocketChannel.class, new NioEventLoopGroup(), new NioEventLoopGroup());
-    this.rpcPath = rpcPath;
   }
 
-  @Override
   protected ChannelInitializer<? extends Channel> channelInitializer() {
-    return ChannelInitializers.httpServer(new JsonRpcServerHandler(this, rpcPath));
-  }
-
-  public static void main(String... args) {
-    HttpJsonRpcServer server = new HttpJsonRpcServer(3000, "rpc");
-    server.start();
+    return ChannelInitializers.protoBuf(Envelope.getDefaultInstance(),
+        new ServerRpcHandler(serviceGroup()));
   }
 }

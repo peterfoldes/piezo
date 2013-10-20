@@ -17,18 +17,29 @@
 package io.soliton.protobuf.json;
 
 import com.google.common.base.CaseFormat;
+import com.google.common.io.BaseEncoding;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Static utility methods pertaining to instances of {@link Message} objects.
+ */
 public class Messages {
 
+  /**
+   * Converts a proto-message into an equivalent JSON representation.
+   *
+   * @param output
+   * @return
+   */
   public static JsonObject toJson(Message output) {
     JsonObject object = new JsonObject();
     for (Map.Entry<Descriptors.FieldDescriptor, Object> field : output.getAllFields().entrySet()) {
@@ -74,7 +85,7 @@ public class Messages {
       case MESSAGE:
         return toJson((Message) value);
       case BYTES:
-        break;
+        return new JsonPrimitive(BaseEncoding.base64().encode(((ByteString) value).toByteArray()));
       case ENUM:
         String protoEnumName = ((Descriptors.EnumValueDescriptor) value).getName();
         return new JsonPrimitive(
@@ -154,7 +165,10 @@ public class Messages {
         }
         return fromJson(enclosingBuilder.getFieldBuilder(field), value.getAsJsonObject());
       case BYTES:
-        break;
+        if (!value.isJsonPrimitive()) {
+          // fail
+        }
+        return ByteString.copyFrom(BaseEncoding.base64().decode(value.getAsString()));
       case ENUM:
         if (!value.isJsonPrimitive()) {
           // fail

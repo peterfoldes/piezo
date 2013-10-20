@@ -21,39 +21,43 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.protobuf.Message;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
 
 /**
  * Implements the logic executed upon a server method returning a result or
  * throwing an exception.
- *
- * @param <O> the type of the response
  */
-public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
+public class JsonRpcCallback implements FutureCallback<JsonRpcResponse> {
 
   private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
   private final JsonElement id;
   private final Channel channel;
 
+  /**
+   * Exhaustive constructor.
+   *
+   * @param id the identifier of the request, as sent by the client
+   * @param channel the channel on which the communication is taking place
+   */
   public JsonRpcCallback(JsonElement id, Channel channel) {
     this.id = id;
     this.channel = channel;
   }
 
   @Override
-  public void onSuccess(O result) {
-    JsonObject payload = Messages.toJson(result);
-    JsonRpcResponse response = JsonRpcResponse.success(payload, id);
+  public void onSuccess(JsonRpcResponse response) {
     ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
     FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
           HttpResponseStatus.OK, responseBuffer);
-    httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+    httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json");
     httpResponse.headers().set(HttpHeaders.Names.CONTENT_LENGTH, responseBuffer.readableBytes());
     channel.writeAndFlush(httpResponse);
   }
@@ -62,11 +66,6 @@ public class JsonRpcCallback<O extends Message> implements FutureCallback<O> {
   public void onFailure(Throwable t) {
     JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.INTERNAL_SERVER_ERROR,
         t.getMessage(), id);
-    ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
-    FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-        HttpResponseStatus.OK, responseBuffer);
-    httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
-    httpResponse.headers().set(HttpHeaders.Names.CONTENT_LENGTH, responseBuffer.readableBytes());
-    channel.writeAndFlush(httpResponse);
+    onSuccess(response);
   }
 }

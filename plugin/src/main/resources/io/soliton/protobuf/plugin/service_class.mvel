@@ -25,6 +25,7 @@ public abstract @{handler.multipleFiles ? '' : 'static'} class @{handler.service
         public String serviceName() { return "@{handler.service.name}"; }
         public String name() { return "@{method.name}"; }
         public com.google.protobuf.Parser<@{method.outputType}> outputParser() { return @{method.outputType}.PARSER; }
+        public com.google.protobuf.Message.Builder outputBuilder() { return @{method.outputType}.newBuilder(); }
       })
     @end{}
       .build();

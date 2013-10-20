@@ -33,12 +33,12 @@ public interface ServerMethod<I, O> {
   public String name();
 
   /**
-   * Returns a parser capable of parsing this method's input parameter
+   * Returns a parser capable of parsing this method's input parameter.
    */
   public Parser<I> inputParser();
 
   /**
-   * Returns a builder capable of building this method's output parameter
+   * Returns a builder capable of building this method's input parameter.
    */
   public Message.Builder inputBuilder();
 

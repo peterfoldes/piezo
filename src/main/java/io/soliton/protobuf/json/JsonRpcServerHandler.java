@@ -18,21 +18,21 @@ package io.soliton.protobuf.json;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Splitter;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.gson.*;
-import com.google.protobuf.Message;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.*;
+import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.soliton.protobuf.Server;
-import io.soliton.protobuf.ServerMethod;
-import io.soliton.protobuf.Service;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -41,7 +41,7 @@ import java.util.Iterator;
 /**
  * Netty handler implementing the JSON RPC protocol over HTTP.
  */
-final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
+final class JsonRpcServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
   private static final Splitter DOT = Splitter.on('.').trimResults().omitEmptyStrings();
 
@@ -54,7 +54,7 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
    * @param server the server to which this handler is attached
    * @param rpcPath the HTTP endpoint path
    */
-  public JsonRpcHandler(Server server, String rpcPath) {
+  public JsonRpcServerHandler(Server server, String rpcPath) {
     this.server = server;
     this.rpcPath = rpcPath;
   }
@@ -65,13 +65,7 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
     JsonRpcResponse transportError = validateTransport(request, ctx.channel());
     if (transportError != null) {
-      ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(transportError.body()).getBytes(Charsets.UTF_8));
-      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody);
-      httpResponse.headers().set(
-          HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
-      ctx.channel().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
+      new JsonRpcCallback(null, ctx.channel()).onSuccess(transportError);
       return;
     }
 
@@ -79,45 +73,12 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
     try {
       jsonRpcRequest = marshallRequest(content);
     } catch (JsonRpcError error) {
-      JsonRpcResponse response = error.response();
-      ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(response.body()).getBytes(Charsets.UTF_8));
-      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody);
-      httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
-      ctx.channel().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
+      new JsonRpcCallback(null, ctx.channel()).onSuccess(error.response());
       return;
     }
 
-    Service service = server.serviceGroup().lookupByName(jsonRpcRequest.service());
-    if (service == null) {
-      JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.BAD_REQUEST,
-          "Unknown service: " + jsonRpcRequest.service());
-      ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(response.body()).getBytes(Charsets.UTF_8));
-      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody);
-      httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
-      ctx.channel().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
-      return;
-    }
-
-    ServerMethod<? extends Message, ? extends Message> method = service.lookup(
-        jsonRpcRequest.method());
-
-    if (method == null) {
-      JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.BAD_REQUEST,
-          "Unknown method: " + jsonRpcRequest.method());
-      ByteBuf responseBody = Unpooled.copiedBuffer(
-          new Gson().toJson(response.body()).getBytes(Charsets.UTF_8));
-      HttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-          HttpResponseStatus.OK, responseBody);
-      httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
-      ctx.channel().writeAndFlush(httpResponse).addListener(ChannelFutureListener.CLOSE);
-      return;
-    }
-
-    invoke(method, jsonRpcRequest.parameter(), jsonRpcRequest.id(), ctx.channel());
+    Futures.addCallback(jsonRpcRequest.invoke(server.serviceGroup()),
+        new JsonRpcCallback(jsonRpcRequest.id(), ctx.channel()));
   }
 
   /**
@@ -248,23 +209,5 @@ final class JsonRpcHandler extends SimpleChannelInboundHandler<HttpRequest> {
     }
 
     return errorResponse;
-  }
-
-  /**
-   * Actually invokes the server method.
-   *
-   * @param method the method to invoke
-   * @param parameter the request's parameter
-   * @param id the request's client-side identifier
-   * @param channel the channel on which the request was received
-   * @param <I> the method's input proto-type
-   * @param <O> the method's output proto-type
-   */
-  private <I extends Message, O extends Message> void invoke(
-      ServerMethod<I, O> method, JsonObject parameter, JsonElement id, Channel channel) {
-    I request = (I) Messages.fromJson(method.inputBuilder(), parameter);
-    ListenableFuture<O> response = method.invoke(request);
-    FutureCallback<O> callback = new JsonRpcCallback<>(id, channel);
-    Futures.addCallback(response, callback);
   }
 }
