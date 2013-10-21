@@ -35,6 +35,7 @@ import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class JsonRpcEndToEndTest {
 
@@ -63,7 +64,7 @@ public class JsonRpcEndToEndTest {
   }
 
   @BeforeClass
-  public static void setUp() {
+  public static void setUp() throws Exception {
     server = new HttpJsonRpcServer(10000, "/rpc");
     Service timeService = TimeService.newService(new TimeServer());
     Service dnsService = TestingSingleFile.Dns.newService(new DnsServer());
@@ -130,7 +131,10 @@ public class JsonRpcEndToEndTest {
         latch.countDown();
       }
     }, Executors.newCachedThreadPool());
-    latch.await();
+
+    if (!latch.await(5, TimeUnit.SECONDS)) {
+      Assert.fail();
+    }
   }
 
   @Test
@@ -171,5 +175,29 @@ public class JsonRpcEndToEndTest {
 //    Assert.assertTrue(resultObject.get("ipAddress").isJsonPrimitive());
 //    Assert.assertTrue(resultObject.get("ipAddress").getAsJsonPrimitive().isNumber());
 //    Assert.assertEquals(1234567, resultObject.get("ipAddress").getAsInt());
+
+    TestingSingleFile.Dns.Interface client = TestingSingleFile.Dns.newStub(
+        new HttpJsonRpcClient(HostAndPort.fromParts("localhost", 10000), "/rpc"));
+    TestingSingleFile.DnsRequest request = TestingSingleFile.DnsRequest.newBuilder()
+        .setDomain("www.soliton.io").build();
+    final CountDownLatch latch = new CountDownLatch(1);
+    Futures.addCallback(client.resolve(request),
+        new FutureCallback<TestingSingleFile.DnsResponse>() {
+      @Override
+      public void onSuccess(TestingSingleFile.DnsResponse result) {
+        Assert.assertTrue(result.getIpAddress() > 0);
+        latch.countDown();
+      }
+
+      @Override
+      public void onFailure(Throwable throwable) {
+        Throwables.propagate(throwable);
+        latch.countDown();
+      }
+    }, Executors.newCachedThreadPool());
+
+    if (!latch.await(5, TimeUnit.SECONDS)) {
+      Assert.fail();
+    }
   }
 }

@@ -18,43 +18,56 @@ package io.soliton.protobuf.json;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-import io.netty.handler.codec.http.HttpResponseStatus;
 
 public class JsonRpcResponse {
 
-  private final JsonObject body;
+  private final JsonElement id;
+  private final JsonObject error;
+  private final JsonObject result;
 
-  static JsonRpcResponse error(HttpResponseStatus status) {
-    return error(status, null);
+  static JsonRpcResponse error(JsonRpcError error) {
+    return error(error, null);
   }
 
-  static JsonRpcResponse error(HttpResponseStatus status, String message) {
-    return error(status, message, null);
-  }
-
-  static JsonRpcResponse error(HttpResponseStatus status, String message, JsonElement id) {
-    JsonObject error = new JsonObject();
-    error.add("code", new JsonPrimitive(status.code()));
-    error.addProperty("message", message);
-    JsonObject body = new JsonObject();
-    body.add("error", error);
-    body.add("id", id);
-    return new JsonRpcResponse(body);
+  static JsonRpcResponse error(JsonRpcError error, JsonElement id) {
+    return new JsonRpcResponse(id, error.toJson(), null);
   }
 
   public static JsonRpcResponse success(JsonObject payload, JsonElement id) {
+    return new JsonRpcResponse(id, null, payload);
+  }
+
+  private JsonRpcResponse(JsonElement id, JsonObject error, JsonObject result) {
+    this.id = id;
+    this.error = error;
+    this.result = result;
+  }
+
+  public JsonObject toJson() {
     JsonObject body = new JsonObject();
-    body.add("id", id);
-    body.add("result", payload);
-    return new JsonRpcResponse(body);
-  }
+    body.add(JsonRpcProtocol.ID, id());
 
-  private JsonRpcResponse(JsonObject body) {
-    this.body = body;
-  }
-
-  public JsonObject body() {
+    if (isError()) {
+      body.add(JsonRpcProtocol.ERROR, error());
+    } else {
+      body.add(JsonRpcProtocol.RESULT, result());
+    }
     return body;
+  }
+
+  public boolean isError() {
+    return error != null;
+  }
+
+  public JsonElement id() {
+    return id;
+  }
+
+  public JsonObject error() {
+    return error;
+  }
+
+  public JsonObject result() {
+    return result;
   }
 }

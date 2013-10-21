@@ -17,20 +17,30 @@
 package io.soliton.protobuf.json;
 
 import com.google.common.base.Function;
+import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.google.protobuf.Message;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.soliton.protobuf.ServerMethod;
 import io.soliton.protobuf.Service;
 import io.soliton.protobuf.ServiceGroup;
 
+import java.util.Iterator;
+
 /**
- * Internal representation of a resolved JSON-RPC request.
+ * Represents a JSON-RPC request.
  */
 class JsonRpcRequest {
+
+  private static final Joiner DOT_JOINER = Joiner.on('.');
+  private static final Splitter DOT_SPLITTER = Splitter.on('.').trimResults().omitEmptyStrings();
+
 
   private final String service;
   private final String method;
@@ -69,6 +79,89 @@ class JsonRpcRequest {
     return parameter;
   }
 
+  public JsonObject toJson() {
+    JsonObject request = new JsonObject();
+    request.add(JsonRpcProtocol.ID, id());
+    request.add(JsonRpcProtocol.METHOD, new JsonPrimitive(DOT_JOINER.join(service(), method())));
+    JsonArray params = new JsonArray();
+    params.add(parameter());
+    request.add(JsonRpcProtocol.PARAMETERS, params);
+    return request;
+  }
+
+  public static JsonRpcRequest fromJson(JsonElement root) throws JsonRpcError {
+    if (!root.isJsonObject()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Received payload is not a JSON Object");
+    }
+
+    JsonObject request = root.getAsJsonObject();
+    JsonElement id = request.get(JsonRpcProtocol.ID);
+    JsonElement methodNameElement = request.get(JsonRpcProtocol.METHOD);
+    JsonElement paramsElement = request.get(JsonRpcProtocol.PARAMETERS);
+
+    if (id == null) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Malformed request, missing 'id' property");
+    }
+
+    if (methodNameElement == null) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Malformed request, missing 'method' property");
+    }
+
+    if (paramsElement == null) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Malformed request, missing 'params' property");
+    }
+
+
+    if (!methodNameElement.isJsonPrimitive()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Method name is not a JSON primitive");
+    }
+
+    JsonPrimitive methodName = methodNameElement.getAsJsonPrimitive();
+    if (!methodName.isString()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Method name is not a string");
+    }
+
+    if (!paramsElement.isJsonArray()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "'params' property is not an array");
+    }
+
+    JsonArray params = paramsElement.getAsJsonArray();
+    if (params.size() != 1) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "'params' property is not an array");
+    }
+
+    JsonElement paramElement = params.get(0);
+    if (!paramElement.isJsonObject()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Parameter is not an object");
+    }
+
+    JsonObject parameter = paramElement.getAsJsonObject();
+    Iterator<String> serviceAndMethod = DOT_SPLITTER.split(methodName.getAsString()).iterator();
+
+    if (!serviceAndMethod.hasNext()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "'method' property is not properly formatted");
+    }
+
+    String service = serviceAndMethod.next();
+    if (!serviceAndMethod.hasNext()) {
+      throw new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "'method' property is not properly formatted");
+    }
+
+    String method = serviceAndMethod.next();
+    return new JsonRpcRequest(service, method, id, parameter);
+  }
+
   /**
    * Executes this request asynchronously.
    *
@@ -79,16 +172,18 @@ class JsonRpcRequest {
   public ListenableFuture<JsonRpcResponse> invoke(ServiceGroup services) {
     Service service = services.lookupByName(service());
     if (service == null) {
-      JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.BAD_REQUEST,
+      JsonRpcError error = new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
           "Unknown service: " + service());
+      JsonRpcResponse response = JsonRpcResponse.error(error);
       return Futures.immediateFuture(response);
     }
 
     ServerMethod<? extends Message, ? extends Message> method = service.lookup(method());
 
     if (method == null) {
-      JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.BAD_REQUEST,
-          "Unknown method: " + method());
+      JsonRpcError error = new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Unknown method: " + service());
+      JsonRpcResponse response = JsonRpcResponse.error(error);
       return Futures.immediateFuture(response);
     }
 

@@ -62,7 +62,7 @@ public class TcpEndToEndTest {
   }
 
   @BeforeClass
-  public static void setUp() {
+  public static void setUp() throws Exception {
     server = new RpcServer(10000);
     Service timeService = TimeService.newService(new TimeServer());
     Service dnsService = TestingSingleFile.Dns.newService(new DnsServer());

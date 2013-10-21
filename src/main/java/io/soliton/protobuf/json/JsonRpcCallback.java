@@ -21,14 +21,15 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.google.gson.stream.JsonWriter;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.*;
+
+import java.io.IOException;
+import java.io.OutputStreamWriter;
 
 /**
  * Implements the logic executed upon a server method returning a result or
@@ -36,25 +37,45 @@ import io.netty.handler.codec.http.HttpVersion;
  */
 public class JsonRpcCallback implements FutureCallback<JsonRpcResponse> {
 
-  private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+  private static final Gson GSON_PP = new GsonBuilder()
+      .disableHtmlEscaping()
+      .generateNonExecutableJson()
+      .setPrettyPrinting()
+      .create();
+  private static final Gson GSON = new GsonBuilder()
+      .disableHtmlEscaping()
+      .generateNonExecutableJson()
+      .create();
+
 
   private final JsonElement id;
   private final Channel channel;
+  private final boolean prettyPrint;
 
   /**
    * Exhaustive constructor.
    *
    * @param id the identifier of the request, as sent by the client
    * @param channel the channel on which the communication is taking place
+   * @param prettyPrint determines whether the output should be pretty-printed
    */
-  public JsonRpcCallback(JsonElement id, Channel channel) {
+  public JsonRpcCallback(JsonElement id, Channel channel, boolean prettyPrint) {
     this.id = id;
     this.channel = channel;
+    this.prettyPrint = prettyPrint;
   }
 
   @Override
   public void onSuccess(JsonRpcResponse response) {
-    ByteBuf responseBuffer = Unpooled.copiedBuffer(GSON.toJson(response.body()), Charsets.UTF_8);
+    ByteBuf responseBuffer = Unpooled.buffer();
+    JsonWriter writer = new JsonWriter(
+        new OutputStreamWriter(new ByteBufOutputStream(responseBuffer), Charsets.UTF_8));
+    (prettyPrint ? GSON_PP : GSON).toJson(response.toJson(), writer);
+    try {
+      writer.flush();
+    } catch (IOException ioe) {
+      // Deliberately ignored, no I/O is involved
+    }
     FullHttpResponse httpResponse = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
           HttpResponseStatus.OK, responseBuffer);
     httpResponse.headers().set(HttpHeaders.Names.CONTENT_TYPE, "application/json");
@@ -64,8 +85,9 @@ public class JsonRpcCallback implements FutureCallback<JsonRpcResponse> {
 
   @Override
   public void onFailure(Throwable t) {
-    JsonRpcResponse response = JsonRpcResponse.error(HttpResponseStatus.INTERNAL_SERVER_ERROR,
-        t.getMessage(), id);
+    JsonRpcError error = new JsonRpcError(HttpResponseStatus.INTERNAL_SERVER_ERROR,
+        t.getMessage());
+    JsonRpcResponse response = JsonRpcResponse.error(error, id);
     onSuccess(response);
   }
 }

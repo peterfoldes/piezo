@@ -26,11 +26,12 @@ import io.soliton.protobuf.RpcException;
  * Represents a handle on the result of the invocation of a method over
  * JSON-RPC.
  *
- * <p>This implementation is in charge of marshalling </p>
+ * <p>This implementation is in charge of marshalling the response received
+ * from the server into the expected protobuf type.</p>
  *
  * @param <V> the type of this promise.
  */
-public final class JsonResponseFuture<V> extends AbstractFuture<V> {
+public final class JsonResponseFuture<V extends Message> extends AbstractFuture<V> {
 
   private final long requestId;
   private final Message.Builder responseBuilder;
@@ -46,16 +47,15 @@ public final class JsonResponseFuture<V> extends AbstractFuture<V> {
    * @param response the JSON representation of the RPC response
    */
   public void setResponse(JsonObject response) {
-    if (response.has("error")) {
-      JsonElement errorElement = response.get("error");
+    if (response.has(JsonRpcProtocol.ERROR)) {
+      JsonElement errorElement = response.get(JsonRpcProtocol.ERROR);
       if (!errorElement.isJsonObject()) {
         setException(new RpcException("Unknown error"));
-        return;
       } else {
         // handle structured error
       }
-    } else if (response.has("result")) {
-      JsonElement resultElement = response.get("result");
+    } else if (response.has(JsonRpcProtocol.RESULT)) {
+      JsonElement resultElement = response.get(JsonRpcProtocol.RESULT);
       if (!resultElement.isJsonObject()) {
         setException(new RpcException("RPC result is not JSON object. Request ID: " + requestId));
         return;
@@ -65,11 +65,9 @@ public final class JsonResponseFuture<V> extends AbstractFuture<V> {
       } catch (Exception e) {
         setException(e);
       }
-      return;
     } else {
       setException(new RpcException(
-          "Response contains neither error nor result. Request ID: " + requestId));
-      return;
+          "Server response contains neither error nor result. Request ID: " + requestId));
     }
   }
 

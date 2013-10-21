@@ -22,7 +22,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import com.google.gson.stream.JsonReader;
 import com.google.protobuf.Message;
+import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.HttpContent;
@@ -30,6 +32,7 @@ import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpResponse;
 import io.soliton.protobuf.ClientRpcHandler;
 
+import java.io.InputStreamReader;
 import java.util.Random;
 import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Logger;
@@ -49,20 +52,25 @@ public class JsonRpcClientHandler extends SimpleChannelInboundHandler<HttpRespon
     if (!response.headers().get(HttpHeaders.Names.CONTENT_TYPE).equals("application/json")) {
       logger.warning(
           "Incorrect Content-Type: " + response.headers().get(HttpHeaders.Names.CONTENT_TYPE));
+      return;
     }
-    JsonElement root = null;
+    JsonElement root;
     try {
-      root = new JsonParser().parse(content.content().toString(Charsets.UTF_8));
+      ByteBufInputStream stream = new ByteBufInputStream(content.content());
+      JsonReader reader = new JsonReader(new InputStreamReader(stream, Charsets.UTF_8));
+      root = new JsonParser().parse(reader);
     } catch (JsonSyntaxException jsonException) {
       logger.warning("JSON response cannot be decoded");
+      return;
     }
     if (!root.isJsonObject()) {
-      logger.warning("JSON response is not a JSON object");
+      logger.warning("JSON response is not a JSON object: " + root.toString());
+      return;
     }
 
     JsonObject responseObject = root.getAsJsonObject();
 
-    JsonElement requestId = responseObject.get("id");
+    JsonElement requestId = responseObject.get(JsonRpcProtocol.ID);
     if (requestId == null || !requestId.isJsonPrimitive()) {
       logger.warning("Received response identifier is not JSON primitive: "
           + requestId.toString());

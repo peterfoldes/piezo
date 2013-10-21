@@ -20,7 +20,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.soliton.protobuf.AbstracRpcServer;
+import io.soliton.protobuf.AbstractRpcServer;
 import io.soliton.protobuf.ChannelInitializers;
 
 /**
@@ -29,7 +29,7 @@ import io.soliton.protobuf.ChannelInitializers;
  *
  * @see <a href="http://json-rpc.org/">JSON-RPC</a>
  */
-public class HttpJsonRpcServer extends AbstracRpcServer {
+public class HttpJsonRpcServer extends AbstractRpcServer {
 
   private final String rpcPath;
 
@@ -49,7 +49,7 @@ public class HttpJsonRpcServer extends AbstracRpcServer {
     return ChannelInitializers.httpServer(new JsonRpcServerHandler(this, rpcPath));
   }
 
-  public static void main(String... args) {
+  public static void main(String... args) throws Exception {
     HttpJsonRpcServer server = new HttpJsonRpcServer(3000, "rpc");
     server.start();
   }

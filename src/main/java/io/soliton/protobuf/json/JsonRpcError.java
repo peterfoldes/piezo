@@ -16,26 +16,36 @@
 
 package io.soliton.protobuf.json;
 
-import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import io.netty.handler.codec.http.HttpResponseStatus;
 
 public class JsonRpcError extends Exception {
 
-  private final JsonRpcResponse response;
+  private final HttpResponseStatus status;
+  private final String message;
 
-  public static JsonRpcError error(HttpResponseStatus status, String message) {
-    return new JsonRpcError(JsonRpcResponse.error(status, message));
+  public JsonRpcError(HttpResponseStatus status, String message) {
+    this.status = status;
+    this.message = message;
   }
 
-  public static JsonRpcError error(HttpResponseStatus status, String message, JsonElement id) {
-    return new JsonRpcError(JsonRpcResponse.error(status, message, id));
+  public JsonObject toJson() {
+    JsonObject error = new JsonObject();
+    error.add("code", new JsonPrimitive(status.code()));
+    error.addProperty("message", message);
+    return error;
   }
 
-  private JsonRpcError(JsonRpcResponse response) {
-    this.response = response;
+  public static JsonRpcError fromJson(JsonObject error) {
+    return null;
   }
 
-  public JsonRpcResponse response() {
-    return response;
+  public HttpResponseStatus status() {
+    return status;
+  }
+
+  public String message() {
+    return message;
   }
 }

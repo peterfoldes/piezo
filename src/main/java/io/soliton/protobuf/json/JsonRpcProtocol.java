@@ -14,21 +14,15 @@
  * limitations under the License.
  */
 
-package io.soliton.protobuf;
+package io.soliton.protobuf.json;
 
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
+class JsonRpcProtocol {
 
-public class RpcServer extends AbstractRpcServer {
+  public static final String CONTENT_TYPE = "application/json";
 
-  protected RpcServer(int port) {
-    super(port, NioServerSocketChannel.class, new NioEventLoopGroup(), new NioEventLoopGroup());
-  }
-
-  protected ChannelInitializer<? extends Channel> channelInitializer() {
-    return ChannelInitializers.protoBuf(Envelope.getDefaultInstance(),
-        new ServerRpcHandler(serviceGroup()));
-  }
+  public static final String ID = "id";
+  public static final String ERROR = "error";
+  public static final String METHOD = "method";
+  public static final String PARAMETERS = "params";
+  public static final String RESULT = "result";
 }

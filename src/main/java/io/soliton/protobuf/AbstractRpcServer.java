@@ -27,9 +27,9 @@ import io.netty.util.concurrent.GenericFutureListener;
 
 import java.util.logging.Logger;
 
-public abstract class AbstracRpcServer implements Server {
+public abstract class AbstractRpcServer implements Server {
 
-  private static final Logger logger = Logger.getLogger(AbstracRpcServer.class.getCanonicalName());
+  private static final Logger logger = Logger.getLogger(AbstractRpcServer.class.getCanonicalName());
 
   private final int port;
   private final ServiceGroup serviceGroup = new DefaultServiceGroup();
@@ -39,7 +39,7 @@ public abstract class AbstracRpcServer implements Server {
 
   private Channel channel;
 
-  protected AbstracRpcServer(int port, Class<? extends ServerChannel> channelClass,
+  protected AbstractRpcServer(int port, Class<? extends ServerChannel> channelClass,
       EventLoopGroup parentGroup, EventLoopGroup childGroup) {
     this.port = port;
     this.channelClass = channelClass;
@@ -59,7 +59,7 @@ public abstract class AbstracRpcServer implements Server {
    *
    * <p>This is a synchronous operation.</p>
    */
-  public void start() {
+  public void start() throws Exception {
     logger.info(String.format("Starting RPC server on port %d", port));
     ServerBootstrap bootstrap = new ServerBootstrap();
 
@@ -73,8 +73,8 @@ public abstract class AbstracRpcServer implements Server {
       this.channel = futureChannel.channel();
       logger.info("RPC server started successfully.");
     } else {
-      logger.info("RPC to start Piezo server.");
-      throw new RuntimeException(futureChannel.cause());
+      logger.info("Failed to start RPC server.");
+      throw new Exception(futureChannel.cause());
     }
   }
 

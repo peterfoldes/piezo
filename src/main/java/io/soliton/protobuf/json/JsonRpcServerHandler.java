@@ -17,33 +17,29 @@
 package io.soliton.protobuf.json;
 
 import com.google.common.base.Charsets;
-import com.google.common.base.Splitter;
 import com.google.common.util.concurrent.Futures;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
-import io.netty.channel.Channel;
+import com.google.gson.JsonSyntaxException;
+import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.*;
 import io.soliton.protobuf.Server;
 
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Netty handler implementing the JSON RPC protocol over HTTP.
  */
 final class JsonRpcServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
-  private static final Splitter DOT = Splitter.on('.').trimResults().omitEmptyStrings();
+  private static final String PRETTY_PRINT_PARAMETER = "prettyPrint";
+  private static final String PP_PARAMETER = "pp";
 
   private final Server server;
   private final String rpcPath;
@@ -61,153 +57,128 @@ final class JsonRpcServerHandler extends SimpleChannelInboundHandler<HttpRequest
 
   @Override
   protected void channelRead0(ChannelHandlerContext ctx, HttpRequest request) throws Exception {
+    if (!(request instanceof HttpContent)) {
+      JsonRpcError error = new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "HTTP request was empty");
+      JsonRpcResponse response = JsonRpcResponse.error(error);
+      new JsonRpcCallback(null, ctx.channel(), true).onSuccess(response);
+      return;
+    }
+
     HttpContent content = (HttpContent) request;
 
-    JsonRpcResponse transportError = validateTransport(request, ctx.channel());
+    JsonElement root;
+    try {
+      root = new JsonParser().parse(
+          new InputStreamReader(new ByteBufInputStream(content.content()), Charsets.UTF_8));
+    } catch (JsonSyntaxException jse) {
+      JsonRpcError error = new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+          "Cannot decode JSON payload");
+      JsonRpcResponse response = JsonRpcResponse.error(error);
+      new JsonRpcCallback(null, ctx.channel(), true).onSuccess(response);
+      return;
+    }
+
+    JsonElement id;
+    if (!root.isJsonObject()) {
+      JsonRpcResponse response = JsonRpcResponse.error(
+          new JsonRpcError(HttpResponseStatus.BAD_REQUEST,
+              "Received payload is not a JSON Object"));
+      new JsonRpcCallback(null, ctx.channel(), true).onSuccess(response);
+      return;
+    } else {
+      id = root.getAsJsonObject().get(JsonRpcProtocol.ID);
+    }
+
+    JsonRpcError transportError = validateTransport(request);
     if (transportError != null) {
-      new JsonRpcCallback(null, ctx.channel()).onSuccess(transportError);
+      JsonRpcResponse response = JsonRpcResponse.error(transportError);
+      new JsonRpcCallback(id, ctx.channel(), true).onSuccess(response);
       return;
     }
 
     JsonRpcRequest jsonRpcRequest;
     try {
-      jsonRpcRequest = marshallRequest(content);
+      jsonRpcRequest = JsonRpcRequest.fromJson(root);
     } catch (JsonRpcError error) {
-      new JsonRpcCallback(null, ctx.channel()).onSuccess(error.response());
+      JsonRpcResponse response = JsonRpcResponse.error(error, id);
+      new JsonRpcCallback(null, ctx.channel(), true).onSuccess(response);
       return;
     }
 
     Futures.addCallback(jsonRpcRequest.invoke(server.serviceGroup()),
-        new JsonRpcCallback(jsonRpcRequest.id(), ctx.channel()));
-  }
-
-  /**
-   * In charge of marshalling and validating the incoming HTTP body
-   * into an actionable JSON-RPC request.
-   *
-   * @param content the content of the received HTTP request
-   *
-   * @return the marshalled JSON RPC request.
-   */
-  private JsonRpcRequest marshallRequest(HttpContent content) throws JsonRpcError {
-    JsonElement root = new JsonParser().parse(content.content().toString(Charsets.UTF_8));
-
-    if (!root.isJsonObject()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Received payload is not a JSON Object");
-    }
-
-    JsonObject request = root.getAsJsonObject();
-    JsonElement id = request.get("id");
-    JsonElement methodNameElement = request.get("method");
-    JsonElement paramsElement = request.get("params");
-
-    if (id == null) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Received request is missing 'id' property");
-    }
-
-    if (methodNameElement == null) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Received request is missing 'method' propoerty");
-    }
-
-    if (paramsElement == null) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Received request is missing 'params' propoerty");
-    }
-
-
-    if (!methodNameElement.isJsonPrimitive()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Method name is not a JSON primitive");
-    }
-
-    JsonPrimitive methodName = methodNameElement.getAsJsonPrimitive();
-    if (!methodName.isString()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Method name is not a string");
-    }
-
-    if (!paramsElement.isJsonArray()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "'params' property is not an array");
-    }
-
-    JsonArray params = paramsElement.getAsJsonArray();
-    if (params.size() != 1) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "'params' property is not an array");
-    }
-
-    JsonElement paramElement = params.get(0);
-    if (!paramElement.isJsonObject()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "Parameter is not an object");
-    }
-
-    JsonObject parameter = paramElement.getAsJsonObject();
-    Iterator<String> serviceAndMethod = DOT.split(methodName.getAsString()).iterator();
-
-    if (!serviceAndMethod.hasNext()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "'method' property is not properly formatted");
-    }
-
-    String service = serviceAndMethod.next();
-    if (!serviceAndMethod.hasNext()) {
-      throw JsonRpcError.error(HttpResponseStatus.BAD_REQUEST,
-          "'method' property is not properly formatted");
-    }
-
-    String method = serviceAndMethod.next();
-    return new JsonRpcRequest(service, method, id, parameter);
+        new JsonRpcCallback(jsonRpcRequest.id(), ctx.channel(), shouldPrettyPrint(request)));
   }
 
   /**
    * In charge of validating all the transport-related aspects of the incoming
    * HTTP request.
    *
-   * <p>In case of failure, this method will return {@code false} after having
-   * taken care of responding to the requester.</p>
-   *
    * <p>The checks include:</p>
    *
    * <ul>
    *   <li>that the request's path matches that of this handler;</li>
    *   <li>that the request's method is {@code POST};</li>
-   *   <li>that the request's body is not empty;</li>
    *   <li>that the request's content-type is {@code application/json};</li>
    * </ul>
    *
    * @param request the received HTTP request
-   * @param channel the channel on which the request was received
-   * @return {@code null} if the request passes the transport checks, the
-   *    response to return to the client otherwise
+   * @return {@code null} if the request passes the transport checks, an error
+   *    to return to the client otherwise.
    * @throws URISyntaxException if the URI of the request cannot be parsed
    */
-  private JsonRpcResponse validateTransport(HttpRequest request, Channel channel)
-      throws URISyntaxException {
+  private JsonRpcError validateTransport(HttpRequest request) throws URISyntaxException,
+      JsonRpcError {
     URI uri = new URI(request.getUri());
-    JsonRpcResponse errorResponse = null;
+    JsonRpcError error = null;
 
     if (!uri.getPath().equals(rpcPath)) {
-      errorResponse = JsonRpcResponse.error(HttpResponseStatus.NOT_FOUND);
+      error = new JsonRpcError(HttpResponseStatus.NOT_FOUND, "Not Found");
     }
 
     if (!request.getMethod().equals(HttpMethod.POST)) {
-      errorResponse = JsonRpcResponse.error(HttpResponseStatus.METHOD_NOT_ALLOWED);
+      error = new JsonRpcError(HttpResponseStatus.METHOD_NOT_ALLOWED,
+          "Method not allowed");
     }
 
-    if (!request.headers().get(HttpHeaders.Names.CONTENT_TYPE).equals("application/json")) {
-      errorResponse = JsonRpcResponse.error(HttpResponseStatus.UNSUPPORTED_MEDIA_TYPE);
+    if (!request.headers().get(HttpHeaders.Names.CONTENT_TYPE)
+        .equals(JsonRpcProtocol.CONTENT_TYPE)) {
+      error = new JsonRpcError(HttpResponseStatus.UNSUPPORTED_MEDIA_TYPE,
+          "Unsupported media type");
     }
 
-    if (!(request instanceof HttpContent)) {
-      errorResponse = JsonRpcResponse.error(HttpResponseStatus.BAD_REQUEST,
-          "HTTP request was empty");
-    }
+    return error;
+  }
 
-    return errorResponse;
+  /**
+   * Determines whether the response to the request should be pretty-printed.
+   *
+   * @param request the HTTP request.
+   * @return {@code true} if the response should be pretty-printed.
+   */
+  private boolean shouldPrettyPrint(HttpRequest request) {
+    QueryStringDecoder decoder = new QueryStringDecoder(request.getUri(), Charsets.UTF_8, true, 2);
+    Map<String, List<String>> parameters = decoder.parameters();
+    if (parameters.containsKey(PP_PARAMETER)) {
+      return parseBoolean(parameters.get(PP_PARAMETER).get(0));
+    } else if (parameters.containsKey(PRETTY_PRINT_PARAMETER)) {
+      return parseBoolean(parameters.get(PRETTY_PRINT_PARAMETER).get(0));
+    }
+    return true;
+  }
+
+  /**
+   * Determines the 'truthiness' of a string value.
+   *
+   * @param value
+   * @return
+   */
+  private boolean parseBoolean(String value) {
+    return "1".equals(value) || "true".equals(value);
+  }
+
+  @Override
+  public boolean isSharable() {
+    return true;
   }
 }
